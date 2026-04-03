@@ -1,34 +1,50 @@
-import type { MemoryAlphaConfig, OpenClawPluginContext } from "../types";
-import type { SqliteStore } from "../db/sqlite";
-import { QdrantClient } from "../ingest/qdrant";
-import { embedText } from "../ingest/embeddings";
+import { Type, type Static } from "@sinclair/typebox";
+import type {
+  OpenClawPluginApi,
+  AgentTool,
+  AgentToolResult,
+} from "../types.js";
+import type { MemoryAlphaConfig } from "../config/index.js";
+import type { SqliteStore } from "../db/sqlite.js";
+import { QdrantClient } from "../ingest/qdrant.js";
+import { embedText } from "../ingest/embeddings.js";
 
-export function registerMemoryTools(
-  ctx: OpenClawPluginContext,
-  config: MemoryAlphaConfig,
+// ---- Parameter schemas (TypeBox) ----
+
+const MemorySaveParams = Type.Object({
+  text: Type.String(),
+  tags: Type.Optional(Type.Array(Type.String())),
+  memory_type: Type.Optional(Type.String()),
+  agent_id: Type.Optional(Type.String()),
+  session_id: Type.Optional(Type.String()),
+});
+
+const MemorySearchParams = Type.Object({
+  query: Type.String(),
+  limit: Type.Optional(Type.Number()),
+});
+
+const MemoryRecallParams = Type.Object({
+  query: Type.String(),
+  limit: Type.Optional(Type.Number()),
+});
+
+// ---- Tool builders ----
+
+function buildMemorySaveTool(
+  qdrant: QdrantClient,
+  embed: (text: string) => Promise<number[]>,
   sqlite: SqliteStore
-) {
-  const qdrant = new QdrantClient(config.qdrantUrl, config.qdrantCollection);
-  const embed = (text: string) =>
-    embedText(text, config.embedDimensions, config.ollamaUrl, config.embedModel);
-
-  ctx.tools.register(
-    "memory_save",
-    {
-      description: "Store a memory in the shared pool",
-      parameters: {
-        type: "object",
-        properties: {
-          text: { type: "string" },
-          tags: { type: "array", items: { type: "string" } },
-          memory_type: { type: "string" },
-          agent_id: { type: "string" },
-          session_id: { type: "string" },
-        },
-        required: ["text"],
-      },
-    },
-    async (args: any) => {
+): AgentTool<typeof MemorySaveParams> {
+  return {
+    name: "memory_save",
+    description: "Store a memory in the shared pool",
+    label: "Save Memory",
+    parameters: MemorySaveParams,
+    async execute(
+      _toolCallId: string,
+      args: Static<typeof MemorySaveParams>
+    ): Promise<AgentToolResult> {
       const id = crypto.randomUUID();
       const vector = await embed(args.text);
       const now = Date.now();
@@ -61,24 +77,29 @@ export function registerMemoryTools(
         tags: args.tags,
       });
 
-      return { ok: true, id };
-    }
-  );
-
-  ctx.tools.register(
-    "memory_search",
-    {
-      description: "Search memories (hybrid: vector + FTS)",
-      parameters: {
-        type: "object",
-        properties: {
-          query: { type: "string" },
-          limit: { type: "number" },
-        },
-        required: ["query"],
-      },
+      return {
+        content: [{ type: "text", text: `Memory saved with id ${id}` }],
+        details: { ok: true, id },
+      };
     },
-    async (args: any) => {
+  };
+}
+
+function buildMemorySearchTool(
+  qdrant: QdrantClient,
+  embed: (text: string) => Promise<number[]>,
+  sqlite: SqliteStore,
+  config: MemoryAlphaConfig
+): AgentTool<typeof MemorySearchParams> {
+  return {
+    name: "memory_search",
+    description: "Search memories (hybrid: vector + FTS)",
+    label: "Search Memories",
+    parameters: MemorySearchParams,
+    async execute(
+      _toolCallId: string,
+      args: Static<typeof MemorySearchParams>
+    ): Promise<AgentToolResult> {
       const limit = args.limit ?? config.recallLimit;
       const vector = await embed(args.query);
       const vectorResults = await qdrant.search(vector, limit);
@@ -97,7 +118,11 @@ export function registerMemoryTools(
       );
       const supplemental = ftsResults
         .filter((r) => !seenTexts.has(r.text))
-        .map((r) => ({ payload: { text: r.text, memory_type: r.memory_type }, score: 0, source: "fts" }));
+        .map((r) => ({
+          payload: { text: r.text, memory_type: r.memory_type },
+          score: 0,
+          source: "fts",
+        }));
 
       const merged = [...vectorResults, ...supplemental].slice(0, limit);
 
@@ -106,24 +131,36 @@ export function registerMemoryTools(
         await sqlite.incrementRecallCount(r.id);
       }
 
-      return { results: merged };
-    }
-  );
+      const text = merged
+        .map(
+          (r: any, i: number) =>
+            `${i + 1}. [${r.payload?.memory_type ?? "unknown"}] ${r.payload?.text ?? ""}`
+        )
+        .join("\n");
 
-  ctx.tools.register(
-    "memory_recall",
-    {
-      description: "Return top memories for current context",
-      parameters: {
-        type: "object",
-        properties: {
-          query: { type: "string" },
-          limit: { type: "number" },
-        },
-        required: ["query"],
-      },
+      return {
+        content: [{ type: "text", text: text || "No results found." }],
+        details: { results: merged },
+      };
     },
-    async (args: any) => {
+  };
+}
+
+function buildMemoryRecallTool(
+  qdrant: QdrantClient,
+  embed: (text: string) => Promise<number[]>,
+  sqlite: SqliteStore,
+  config: MemoryAlphaConfig
+): AgentTool<typeof MemoryRecallParams> {
+  return {
+    name: "memory_recall",
+    description: "Return top memories for current context",
+    label: "Recall Memories",
+    parameters: MemoryRecallParams,
+    async execute(
+      _toolCallId: string,
+      args: Static<typeof MemoryRecallParams>
+    ): Promise<AgentToolResult> {
       const limit = args.limit ?? config.recallLimit;
       const vector = await embed(args.query);
       const results = await qdrant.search(vector, limit);
@@ -135,11 +172,39 @@ export function registerMemoryTools(
         }
       }
 
-      return { injected: results, count: results.length };
-    }
-  );
+      const text = results
+        .map((r: any, i: number) => `${i + 1}. ${r.payload?.text ?? ""}`)
+        .join("\n");
 
-  ctx.logger.info("memory-alpha: tools registered", {
+      return {
+        content: [{ type: "text", text: text || "No memories recalled." }],
+        details: { injected: results, count: results.length },
+      };
+    },
+  };
+}
+
+// ---- Registration ----
+
+export function registerMemoryTools(
+  api: OpenClawPluginApi,
+  config: MemoryAlphaConfig,
+  sqlite: SqliteStore
+) {
+  const qdrant = new QdrantClient(config.qdrantUrl, config.qdrantCollection);
+  const embed = (text: string) =>
+    embedText(
+      text,
+      config.embedDimensions,
+      config.ollamaUrl,
+      config.embedModel
+    );
+
+  api.registerTool(buildMemorySaveTool(qdrant, embed, sqlite));
+  api.registerTool(buildMemorySearchTool(qdrant, embed, sqlite, config));
+  api.registerTool(buildMemoryRecallTool(qdrant, embed, sqlite, config));
+
+  api.logger.info("memory-alpha: tools registered", {
     sharedPool: config.sharedPool,
   });
 }

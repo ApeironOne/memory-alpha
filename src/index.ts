@@ -1,19 +1,27 @@
-import type { OpenClawPluginContext } from "./types";
-import { loadConfig } from "./config";
-import { registerHooks } from "./hooks";
-import { registerMemoryTools } from "./tools/memory";
-import { registerMemorySlot } from "./memory/slot";
-import { SqliteStore } from "./db/sqlite";
+import { definePluginEntry } from "./types.js";
+import type { OpenClawPluginApi } from "./types.js";
+import { loadConfig } from "./config/index.js";
+import { registerHooks } from "./hooks/index.js";
+import { registerMemoryTools } from "./tools/memory.js";
+import { registerMemorySlot } from "./memory/slot.js";
+import { SqliteStore } from "./db/sqlite.js";
 
-export default function register(ctx: OpenClawPluginContext, rawConfig: any) {
-  const config = loadConfig(rawConfig);
+export default definePluginEntry({
+  id: "memory-alpha",
+  name: "Memory Alpha",
+  description: "Collective memory plugin with Qdrant + SQLite",
+  kind: "memory",
 
-  ctx.logger.info("memory-alpha: registering", { config: { ...config } });
+  register(api: OpenClawPluginApi) {
+    const config = loadConfig(undefined);
 
-  const sqlite = new SqliteStore(config.sqlitePath);
-  sqlite.init();
+    api.logger.info("memory-alpha: registering", { config: { ...config } });
 
-  registerHooks(ctx, config, sqlite);
-  registerMemoryTools(ctx, config, sqlite);
-  registerMemorySlot(ctx, config, sqlite);
-}
+    const sqlite = new SqliteStore(config.sqlitePath);
+    sqlite.init();
+
+    registerHooks(api, config, sqlite);
+    registerMemoryTools(api, config, sqlite);
+    registerMemorySlot(api, config, sqlite);
+  },
+});

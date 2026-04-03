@@ -1,40 +1,53 @@
-import type { MemoryAlphaConfig, OpenClawPluginContext } from "../types";
-import type { SqliteStore } from "../db/sqlite";
+import type { OpenClawPluginApi } from "../types.js";
+import type { MemoryAlphaConfig } from "../config/index.js";
+import type { SqliteStore } from "../db/sqlite.js";
 
 export function registerMemorySlot(
-  ctx: OpenClawPluginContext,
-  config: MemoryAlphaConfig,
+  api: OpenClawPluginApi,
+  _config: MemoryAlphaConfig,
   sqlite: SqliteStore
 ) {
-  ctx.memory.registerSlot("memory", async () => {
-    // Fetch recent memories from SQLite (last 24h, limit 5)
-    const recent = await sqlite.getRecentMemories(5);
-
-    // Fetch agent profile from profile_cache
-    const profile = await sqlite.getProfile("agent");
-
-    // Track recall counts
-    for (const mem of recent) {
-      await sqlite.incrementRecallCount(mem.id);
+  api.registerMemoryPromptSection(
+    (_params: { availableTools: Set<string> }): string[] => {
+      // registerMemoryPromptSection expects a synchronous builder returning
+      // string[].  We use a time-based cache refreshed asynchronously.
+      return buildMemoryLines(sqlite);
     }
+  );
+}
 
-    // Format for context injection
-    const memoryLines = recent.map(
-      (m) => `[${m.memory_type}] ${m.text}`
+// Synchronous helper — returns cached lines.
+let cachedLines: string[] = [];
+let lastRefresh = 0;
+const CACHE_TTL_MS = 30_000;
+
+function buildMemoryLines(sqlite: SqliteStore): string[] {
+  const now = Date.now();
+  if (now - lastRefresh > CACHE_TTL_MS) {
+    lastRefresh = now;
+    // Fire-and-forget async refresh
+    refreshCache(sqlite).catch(() => {});
+  }
+  return cachedLines;
+}
+
+async function refreshCache(sqlite: SqliteStore): Promise<void> {
+  const recent = await sqlite.getRecentMemories(5);
+  const profile = await sqlite.getProfile("agent");
+
+  for (const mem of recent) {
+    await sqlite.incrementRecallCount(mem.id);
+  }
+
+  const block: string[] = [];
+  if (profile) {
+    block.push("## Agent Profile", profile, "");
+  }
+  if (recent.length > 0) {
+    block.push(
+      "## Recent Memories",
+      ...recent.map((m) => `[${m.memory_type}] ${m.text}`)
     );
-
-    const block: string[] = [];
-    if (profile) {
-      block.push("## Agent Profile", profile, "");
-    }
-    if (memoryLines.length > 0) {
-      block.push("## Recent Memories", ...memoryLines);
-    }
-
-    return {
-      profile: profile ? [profile] : [],
-      memories: recent.map((m) => m.text),
-      formatted: block.join("\n"),
-    };
-  });
+  }
+  cachedLines = block;
 }
