@@ -4,6 +4,7 @@ import { embedText } from "../ingest/embeddings";
 
 export function registerMemoryTools(ctx: OpenClawPluginContext, config: MemoryAlphaConfig) {
   const qdrant = new QdrantClient(config.qdrantUrl, config.qdrantCollection);
+  const embed = (text: string) => embedText(text, config.embedDimensions, config.ollamaUrl, config.embedModel);
 
   ctx.tools.register(
     "memory_save",
@@ -21,7 +22,7 @@ export function registerMemoryTools(ctx: OpenClawPluginContext, config: MemoryAl
       }
     },
     async (args: any) => {
-      const vector = await embedText(args.text, config.embedDimensions);
+      const vector = await embed(args.text);
       await qdrant.upsert([
         {
           id: crypto.randomUUID(),
@@ -53,7 +54,7 @@ export function registerMemoryTools(ctx: OpenClawPluginContext, config: MemoryAl
       }
     },
     async (args: any) => {
-      const vector = await embedText(args.query, config.embedDimensions);
+      const vector = await embed(args.query);
       const results = await qdrant.search(vector, args.limit ?? config.recallLimit);
       return { results };
     }
@@ -73,7 +74,7 @@ export function registerMemoryTools(ctx: OpenClawPluginContext, config: MemoryAl
       }
     },
     async (args: any) => {
-      const vector = await embedText(args.query, config.embedDimensions);
+      const vector = await embed(args.query);
       const results = await qdrant.search(vector, args.limit ?? config.recallLimit);
       return { injected: results, count: results.length };
     }

@@ -32,7 +32,10 @@ This is a **memory plugin**, not a normal skill. It replaces OpenClaw's memory s
           "sharedPool": true,
           "autoCapture": true,
           "autoRecall": true,
-          "recallLimit": 10
+          "recallLimit": 10,
+          "embedModel": "snowflake-arctic-embed2",
+          "embedDimensions": 1024,
+          "ollamaUrl": "http://127.0.0.1:11434"
         }
       }
     }

@@ -28,4 +28,7 @@ export interface MemoryAlphaConfig {
   autoCapture: boolean;
   autoRecall: boolean;
   recallLimit: number;
+  embedDimensions: number;
+  embedModel: string;
+  ollamaUrl: string;
 }

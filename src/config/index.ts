@@ -8,7 +8,9 @@ export const ConfigSchema = z.object({
   autoCapture: z.boolean().default(true),
   autoRecall: z.boolean().default(true),
   recallLimit: z.number().default(10),
-  embedDimensions: z.number().default(1024)
+  embedDimensions: z.number().default(1024),
+  embedModel: z.string().default("snowflake-arctic-embed2"),
+  ollamaUrl: z.string().default("http://127.0.0.1:11434")
 });
 
 export type MemoryAlphaConfig = z.infer<typeof ConfigSchema>;
