@@ -20,15 +20,4 @@ export interface OpenClawPluginContext {
   };
 }
 
-export interface MemoryAlphaConfig {
-  qdrantUrl: string;
-  qdrantCollection: string;
-  sqlitePath: string;
-  sharedPool: boolean;
-  autoCapture: boolean;
-  autoRecall: boolean;
-  recallLimit: number;
-  embedDimensions: number;
-  embedModel: string;
-  ollamaUrl: string;
-}
+export type { MemoryAlphaConfig } from "./config";

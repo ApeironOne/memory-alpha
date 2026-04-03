@@ -13,7 +13,7 @@ export default function register(ctx: OpenClawPluginContext, rawConfig: any) {
   const sqlite = new SqliteStore(config.sqlitePath);
   sqlite.init();
 
-  registerHooks(ctx, config);
-  registerMemoryTools(ctx, config);
-  registerMemorySlot(ctx, config);
+  registerHooks(ctx, config, sqlite);
+  registerMemoryTools(ctx, config, sqlite);
+  registerMemorySlot(ctx, config, sqlite);
 }
