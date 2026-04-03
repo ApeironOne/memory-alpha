@@ -1,0 +1,15 @@
+{
+  "name": "memory-alpha",
+  "version": "0.1.0",
+  "description": "Collective memory plugin for OpenClaw (Qdrant + SQLite + auto-recall)",
+  "kind": "memory",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "author": "USS Prometheus / Apeiron",
+  "license": "MIT",
+  "repository": "https://github.com/your-org/memory-alpha",
+  "openclaw": {
+    "minVersion": ">=2026.3.0",
+    "slots": ["memory"]
+  }
+}
