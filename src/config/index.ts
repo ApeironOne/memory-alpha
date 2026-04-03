@@ -7,7 +7,8 @@ export const ConfigSchema = z.object({
   sharedPool: z.boolean().default(true),
   autoCapture: z.boolean().default(true),
   autoRecall: z.boolean().default(true),
-  recallLimit: z.number().default(10)
+  recallLimit: z.number().default(10),
+  embedDimensions: z.number().default(1024)
 });
 
 export type MemoryAlphaConfig = z.infer<typeof ConfigSchema>;

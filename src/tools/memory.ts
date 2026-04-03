@@ -1,6 +1,10 @@
 import type { MemoryAlphaConfig, OpenClawPluginContext } from "../types";
+import { QdrantClient } from "../ingest/qdrant";
+import { embedText } from "../ingest/embeddings";
 
 export function registerMemoryTools(ctx: OpenClawPluginContext, config: MemoryAlphaConfig) {
+  const qdrant = new QdrantClient(config.qdrantUrl, config.qdrantCollection);
+
   ctx.tools.register(
     "memory_save",
     {
@@ -9,14 +13,29 @@ export function registerMemoryTools(ctx: OpenClawPluginContext, config: MemoryAl
         type: "object",
         properties: {
           text: { type: "string" },
-          tags: { type: "array", items: { type: "string" } }
+          tags: { type: "array", items: { type: "string" } },
+          agent_id: { type: "string" },
+          session_id: { type: "string" }
         },
         required: ["text"]
       }
     },
-    async (_args: any) => {
-      // TODO: implement store in Qdrant + SQLite graph
-      return { ok: true, queued: true };
+    async (args: any) => {
+      const vector = await embedText(args.text, config.embedDimensions);
+      await qdrant.upsert([
+        {
+          id: crypto.randomUUID(),
+          vector,
+          payload: {
+            text: args.text,
+            tags: args.tags ?? [],
+            agent_id: args.agent_id,
+            session_id: args.session_id,
+            source: "tool"
+          }
+        }
+      ]);
+      return { ok: true };
     }
   );
 
@@ -33,9 +52,10 @@ export function registerMemoryTools(ctx: OpenClawPluginContext, config: MemoryAl
         required: ["query"]
       }
     },
-    async (_args: any) => {
-      // TODO: implement hybrid search
-      return { results: [] };
+    async (args: any) => {
+      const vector = await embedText(args.query, config.embedDimensions);
+      const results = await qdrant.search(vector, args.limit ?? config.recallLimit);
+      return { results };
     }
   );
 
@@ -52,9 +72,10 @@ export function registerMemoryTools(ctx: OpenClawPluginContext, config: MemoryAl
         required: ["query"]
       }
     },
-    async (_args: any) => {
-      // TODO: implement recall with ranking + budget
-      return { injected: [], count: 0 };
+    async (args: any) => {
+      const vector = await embedText(args.query, config.embedDimensions);
+      const results = await qdrant.search(vector, args.limit ?? config.recallLimit);
+      return { injected: results, count: results.length };
     }
   );
 
