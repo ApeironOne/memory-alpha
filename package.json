@@ -12,7 +12,8 @@
     "docker:start": "docker compose up -d",
     "docker:stop": "docker compose down",
     "docker:logs": "docker compose logs -f",
-    "docker:pull-model": "docker exec memory-alpha-ollama ollama pull snowflake-arctic-embed2"
+    "docker:pull-model": "docker exec memory-alpha-ollama ollama pull snowflake-arctic-embed2",
+    "cleanup": "./cleanup.sh"
   },
   "dependencies": {
     "@sinclair/typebox": "^0.34.49",
