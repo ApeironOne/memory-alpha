@@ -46,13 +46,19 @@ export interface OpenClawPluginToolContext {
   [key: string]: any;
 }
 
+export interface OpenClawHookRegistration {
+  name: string;
+  handler: (...args: any[]) => any;
+  priority?: number;
+}
+
 export interface OpenClawPluginApi {
   registerTool(
     tool:
       | AgentTool<any, any>
       | ((ctx: OpenClawPluginToolContext) => AgentTool<any, any>)
   ): void;
-  on(event: string, handler: (...args: any[]) => any, opts?: { priority?: number }): void;
+  registerHook(hook: OpenClawHookRegistration): void;
   registerMemoryPromptSection(
     builder: (params: { availableTools: Set<string> }) => string[]
   ): void;
@@ -72,6 +78,7 @@ export interface PluginEntryOptions {
   name: string;
   description: string;
   kind: string;
+  hooks?: string[];
   register(api: OpenClawPluginApi): void;
 }
 

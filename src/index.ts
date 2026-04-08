@@ -14,6 +14,7 @@ export default definePluginEntry({
   name: "Memory Alpha",
   description: "Collective memory plugin with Qdrant + SQLite",
   kind: "memory",
+  hooks: ["message:received", "message:sent", "before_prompt_build"],
 
   register(api: OpenClawPluginApi) {
     // Load and validate configuration

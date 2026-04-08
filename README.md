@@ -23,7 +23,7 @@ npm run build
 Then install to OpenClaw:
 
 ```bash
-openclaw install /path/to/memory-alpha-plugin/implementation
+openclaw plugins install /path/to/memory-alpha-plugin/implementation
 ```
 
 ### 2. Configuration

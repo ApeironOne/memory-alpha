@@ -95,31 +95,31 @@ export function registerHooks(
   }
 
   if (config.autoCapture) {
-    api.on(
-      "message:received",
-      async (hookCtx: any) => {
+    api.registerHook({
+      name: "message:received",
+      handler: async (hookCtx: any) => {
         const text = hookCtx?.message?.text;
         if (typeof text !== "string" || !text) return;
         await captureMemories(text, "message:received", hookCtx);
       },
-      { priority: 10 }
-    );
+      priority: 10,
+    });
 
-    api.on(
-      "message:sent",
-      async (hookCtx: any) => {
+    api.registerHook({
+      name: "message:sent",
+      handler: async (hookCtx: any) => {
         const text = hookCtx?.message?.text;
         if (typeof text !== "string" || !text) return;
         await captureMemories(text, "message:sent", hookCtx);
       },
-      { priority: 10 }
-    );
+      priority: 10,
+    });
   }
 
   if (config.autoRecall && qdrant && embed) {
-    api.on(
-      "before_prompt_build",
-      async (hookCtx: any) => {
+    api.registerHook({
+      name: "before_prompt_build",
+      handler: async (hookCtx: any) => {
         const query = hookCtx?.message?.text;
         if (typeof query !== "string" || !query) return;
         try {
@@ -135,8 +135,8 @@ export function registerHooks(
           });
         }
       },
-      { priority: 5 }
-    );
+      priority: 5,
+    });
   }
 
   api.logger.info("memory-alpha: hooks registered", {
