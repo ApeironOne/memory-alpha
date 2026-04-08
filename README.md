@@ -32,7 +32,7 @@ Memory Alpha requires configuration via environment variables. Choose a deployme
 
 #### SQLite-Only Mode (Simplest)
 
-**Best for:** Single-user, local memory only, no AI infrastructure needed.
+**Best for:** Single-user OR multi-user, local memory only, no AI infrastructure needed.
 
 ```bash
 # Synology
@@ -120,6 +120,7 @@ memory_save({
   tags: ["preference", "communication"],
   memory_type: "preference",
   agent_id: "kei",
+  user_id: "captain",
   session_id: "agent:main:main"
 })
 ```
@@ -203,6 +204,27 @@ memory_recall({
 - You have Qdrant + Ollama running
 - Multiple gateways need to share memories
 - You want AI-powered semantic search
+
+### Multi-User Support
+
+Memories are tagged with both `user_id` and `agent_id`, enabling per-user memory isolation in shared environments.
+
+- **`user_id`** — identifies who the memory belongs to (optional, backward-compatible)
+- **`agent_id`** — identifies which agent created the memory
+
+When saving via the `memory_save` tool, pass `user_id` to associate the memory with a specific user:
+
+```typescript
+memory_save({
+  text: "User prefers dark mode",
+  user_id: "user-42",
+  agent_id: "kei"
+})
+```
+
+When memories are auto-captured via hooks, `user_id` is extracted automatically from the hook context (`hookCtx.user.id`, `hookCtx.author.id`, or `hookCtx.message.userId`).
+
+If `user_id` is not provided, the memory is still saved — it simply won't be associated with a specific user.
 
 ## Infrastructure Setup
 

@@ -2,7 +2,7 @@ import { mkdirSync } from "fs";
 import { dirname } from "path";
 import { definePluginEntry } from "./types.js";
 import type { OpenClawPluginApi } from "./types.js";
-import { loadConfig, getConfigExamples } from "./config/index.js";
+import { loadConfig } from "./config/index.js";
 import { registerHooks } from "./hooks/index.js";
 import { registerMemoryTools } from "./tools/memory.js";
 import { registerMemorySlot } from "./memory/slot.js";
@@ -25,16 +25,9 @@ export default definePluginEntry({
         warnings: result.warnings
       });
       
-      // Log setup instructions
-      api.logger.error("memory-alpha: setup required");
-      api.logger.error("\nExample configurations:");
-      const examples = getConfigExamples();
-      for (const [name, config] of Object.entries(examples)) {
-        api.logger.error(`\n${name}:`);
-        api.logger.error(config);
-      }
-      
-      throw new Error("Memory Alpha plugin configuration invalid. See logs for setup instructions.");
+      api.logger.error('Run "openclaw memory-alpha setup" to configure');
+
+      throw new Error("Memory Alpha plugin configuration invalid. Run setup to configure.");
     }
 
     const config = result.config!;

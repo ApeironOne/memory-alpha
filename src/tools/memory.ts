@@ -16,6 +16,7 @@ const MemorySaveParams = Type.Object({
   tags: Type.Optional(Type.Array(Type.String())),
   memory_type: Type.Optional(Type.String()),
   agent_id: Type.Optional(Type.String()),
+  user_id: Type.Optional(Type.String()),
   session_id: Type.Optional(Type.String()),
 });
 
@@ -60,6 +61,7 @@ function buildMemorySaveTool(
               tags: args.tags ?? [],
               memory_type: args.memory_type ?? "fact",
               agent_id: args.agent_id,
+              user_id: args.user_id,
               session_id: args.session_id,
               source: "tool",
               created_at: now,
@@ -74,6 +76,7 @@ function buildMemorySaveTool(
           memory_type: args.memory_type ?? "fact",
           session_id: args.session_id,
           agent_id: args.agent_id,
+          user_id: args.user_id,
           source: "tool",
           tags: args.tags,
         });
@@ -274,6 +277,7 @@ function buildSqliteOnlySaveTool(
         memory_type: args.memory_type ?? "fact",
         session_id: args.session_id,
         agent_id: args.agent_id,
+        user_id: args.user_id,
         source: "tool",
         tags: args.tags,
       });

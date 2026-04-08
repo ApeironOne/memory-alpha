@@ -8,6 +8,7 @@ export interface MemoryRow {
   memory_type: string;
   session_id: string | null;
   agent_id: string | null;
+  user_id: string | null;
   source: string | null;
   tags: string | null;
   recall_count: number;
@@ -31,6 +32,7 @@ export class SqliteStore {
         memory_type TEXT DEFAULT 'fact',
         session_id TEXT,
         agent_id TEXT,
+        user_id TEXT,
         source TEXT,
         tags TEXT,
         recall_count INTEGER DEFAULT 0,
@@ -124,13 +126,14 @@ export class SqliteStore {
     memory_type: string;
     session_id?: string;
     agent_id?: string;
+    user_id?: string;
     source?: string;
     tags?: string[];
   }): Promise<void> {
     const now = Date.now();
     await this.run(
-      `INSERT OR REPLACE INTO memories (id, text, created_at, updated_at, memory_type, session_id, agent_id, source, tags)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT OR REPLACE INTO memories (id, text, created_at, updated_at, memory_type, session_id, agent_id, user_id, source, tags)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         mem.id,
         mem.text,
@@ -139,6 +142,7 @@ export class SqliteStore {
         mem.memory_type,
         mem.session_id ?? null,
         mem.agent_id ?? null,
+        mem.user_id ?? null,
         mem.source ?? null,
         mem.tags ? JSON.stringify(mem.tags) : null,
       ]

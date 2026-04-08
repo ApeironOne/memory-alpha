@@ -1,6 +1,9 @@
 import { z } from "zod";
+import { existsSync, readFileSync } from "fs";
 import { homedir } from "os";
 import { resolve } from "path";
+
+const CONFIG_PATH = resolve(homedir(), ".openclaw/plugins/memory-alpha/config.json");
 
 // Schema with NO defaults - all must be explicitly provided
 export const ConfigSchema = z.object({
@@ -52,18 +55,33 @@ export interface ConfigValidationResult {
  * - MEMORY_ALPHA_AUTO_RECALL (default: true)
  * - MEMORY_ALPHA_RECALL_LIMIT (default: 10)
  */
+/**
+ * Load config file from disk if it exists.
+ */
+function loadConfigFile(): Record<string, any> | null {
+  try {
+    if (existsSync(CONFIG_PATH)) {
+      return JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
+    }
+  } catch {
+    // ignore malformed file
+  }
+  return null;
+}
+
 export function loadConfig(overrides?: any): ConfigValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  // Read from environment
+  // Try config file first, then environment variables
+  const file = loadConfigFile();
   const env = process.env;
-  
+
   // SQLite path (required)
-  let sqlitePath = overrides?.sqlitePath || env.MEMORY_ALPHA_SQLITE_PATH;
+  let sqlitePath = overrides?.sqlitePath || file?.sqlitePath || env.MEMORY_ALPHA_SQLITE_PATH;
   if (!sqlitePath) {
-    errors.push("MEMORY_ALPHA_SQLITE_PATH is required");
-    errors.push("Example: MEMORY_ALPHA_SQLITE_PATH=/volume1/openclaw/memory.db");
+    errors.push("No configuration found. Run: openclaw memory-alpha setup");
+    errors.push("Or set MEMORY_ALPHA_SQLITE_PATH environment variable");
     return { valid: false, errors, warnings, mode: "sqlite-only" };
   }
   
@@ -73,19 +91,19 @@ export function loadConfig(overrides?: any): ConfigValidationResult {
   }
   
   // Qdrant (optional)
-  const qdrantUrl = overrides?.qdrantUrl || env.MEMORY_ALPHA_QDRANT_URL;
-  const qdrantCollection = overrides?.qdrantCollection || env.MEMORY_ALPHA_QDRANT_COLLECTION || "memory_alpha";
-  
+  const qdrantUrl = overrides?.qdrantUrl || file?.qdrantUrl || env.MEMORY_ALPHA_QDRANT_URL;
+  const qdrantCollection = overrides?.qdrantCollection || file?.qdrantCollection || env.MEMORY_ALPHA_QDRANT_COLLECTION || "memory_alpha";
+
   // Ollama (optional, requires Qdrant)
-  const ollamaUrl = overrides?.ollamaUrl || env.MEMORY_ALPHA_OLLAMA_URL;
-  const embedModel = overrides?.embedModel || env.MEMORY_ALPHA_EMBED_MODEL || "snowflake-arctic-embed2";
-  const embedDimensions = parseInt(overrides?.embedDimensions || env.MEMORY_ALPHA_EMBED_DIMENSIONS || "1024", 10);
-  
+  const ollamaUrl = overrides?.ollamaUrl || file?.ollamaUrl || env.MEMORY_ALPHA_OLLAMA_URL;
+  const embedModel = overrides?.embedModel || file?.embedModel || env.MEMORY_ALPHA_EMBED_MODEL || "snowflake-arctic-embed2";
+  const embedDimensions = parseInt(overrides?.embedDimensions || file?.embedDimensions || env.MEMORY_ALPHA_EMBED_DIMENSIONS || "1024", 10);
+
   // Behavior flags
-  const sharedPool = parseBool(overrides?.sharedPool ?? env.MEMORY_ALPHA_SHARED_POOL, false);
-  const autoCapture = parseBool(overrides?.autoCapture ?? env.MEMORY_ALPHA_AUTO_CAPTURE, true);
-  const autoRecall = parseBool(overrides?.autoRecall ?? env.MEMORY_ALPHA_AUTO_RECALL, true);
-  const recallLimit = parseInt(overrides?.recallLimit || env.MEMORY_ALPHA_RECALL_LIMIT || "10", 10);
+  const sharedPool = parseBool(overrides?.sharedPool ?? file?.sharedPool ?? env.MEMORY_ALPHA_SHARED_POOL, false);
+  const autoCapture = parseBool(overrides?.autoCapture ?? file?.autoCapture ?? env.MEMORY_ALPHA_AUTO_CAPTURE, true);
+  const autoRecall = parseBool(overrides?.autoRecall ?? file?.autoRecall ?? env.MEMORY_ALPHA_AUTO_RECALL, true);
+  const recallLimit = parseInt(overrides?.recallLimit || file?.recallLimit || env.MEMORY_ALPHA_RECALL_LIMIT || "10", 10);
   
   // Validate URLs
   if (qdrantUrl && !isValidHttpUrl(qdrantUrl)) {

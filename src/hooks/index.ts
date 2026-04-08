@@ -30,6 +30,8 @@ export function registerHooks(
     hookCtx: any
   ) {
     const memories = extractMemoriesFromText(text);
+    const userId =
+      hookCtx?.user?.id ?? hookCtx?.author?.id ?? hookCtx?.message?.userId;
     for (const m of memories) {
       try {
         const id = crypto.randomUUID();
@@ -48,6 +50,7 @@ export function registerHooks(
                 source,
                 session_id: hookCtx?.session?.id,
                 agent_id: hookCtx?.session?.agentId,
+                user_id: userId,
                 created_at: now,
               },
             },
@@ -61,6 +64,7 @@ export function registerHooks(
           memory_type: m.memoryType,
           session_id: hookCtx?.session?.id,
           agent_id: hookCtx?.session?.agentId,
+          user_id: userId,
           source,
         });
       } catch (err: any) {
