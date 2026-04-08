@@ -23,7 +23,8 @@ export const ConfigSchema = z.object({
   sharedPool: z.boolean().default(false).describe("Multi-gateway shared memory mode"),
   autoCapture: z.boolean().default(true).describe("Auto-capture memories from sessions"),
   autoRecall: z.boolean().default(true).describe("Auto-inject recent memories into prompts"),
-  recallLimit: z.number().default(10).describe("Number of memories to recall")
+  recallLimit: z.number().default(10).describe("Number of memories to recall"),
+  captureMode: z.enum(["filtered", "full", "hybrid"]).default("hybrid").describe("Memory capture mode: filtered (key moments only), full (complete transcripts), hybrid (both)")
 });
 
 export type MemoryAlphaConfig = z.infer<typeof ConfigSchema>;
@@ -54,6 +55,7 @@ export interface ConfigValidationResult {
  * - MEMORY_ALPHA_AUTO_CAPTURE (default: true)
  * - MEMORY_ALPHA_AUTO_RECALL (default: true)
  * - MEMORY_ALPHA_RECALL_LIMIT (default: 10)
+ * - MEMORY_ALPHA_CAPTURE_MODE (default: hybrid) — filtered|full|hybrid
  */
 /**
  * Load config file from disk if it exists.
@@ -104,6 +106,7 @@ export function loadConfig(overrides?: any): ConfigValidationResult {
   const autoCapture = parseBool(overrides?.autoCapture ?? file?.autoCapture ?? env.MEMORY_ALPHA_AUTO_CAPTURE, true);
   const autoRecall = parseBool(overrides?.autoRecall ?? file?.autoRecall ?? env.MEMORY_ALPHA_AUTO_RECALL, true);
   const recallLimit = parseInt(overrides?.recallLimit || file?.recallLimit || env.MEMORY_ALPHA_RECALL_LIMIT || "10", 10);
+  const captureMode = overrides?.captureMode || file?.captureMode || env.MEMORY_ALPHA_CAPTURE_MODE || "hybrid";
   
   // Validate URLs
   if (qdrantUrl && !isValidHttpUrl(qdrantUrl)) {
@@ -139,7 +142,8 @@ export function loadConfig(overrides?: any): ConfigValidationResult {
     sharedPool,
     autoCapture,
     autoRecall,
-    recallLimit
+    recallLimit,
+    captureMode
   };
   
   // Validate with schema

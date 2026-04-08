@@ -24,54 +24,72 @@ export function registerHooks(
         )
     : null;
 
+  async function saveMemory(
+    text: string,
+    memoryType: string,
+    source: string,
+    hookCtx: any
+  ) {
+    const userId =
+      hookCtx?.user?.id ?? hookCtx?.author?.id ?? hookCtx?.message?.userId;
+    try {
+      const id = crypto.randomUUID();
+      const now = Date.now();
+
+      if (qdrant && embed) {
+        const vector = await embed(text);
+        await qdrant.upsert([
+          {
+            id,
+            vector,
+            payload: {
+              text,
+              memory_type: memoryType,
+              source,
+              session_id: hookCtx?.session?.id,
+              agent_id: hookCtx?.session?.agentId,
+              user_id: userId,
+              created_at: now,
+            },
+          },
+        ]);
+      }
+
+      await sqlite.insertMemory({
+        id,
+        text,
+        memory_type: memoryType,
+        session_id: hookCtx?.session?.id,
+        agent_id: hookCtx?.session?.agentId,
+        user_id: userId,
+        source,
+      });
+    } catch (err: any) {
+      api.logger.error("memory-alpha: auto-capture failed", {
+        source,
+        memoryType,
+        error: err.message,
+      });
+    }
+  }
+
   async function captureMemories(
     text: string,
     source: string,
     hookCtx: any
   ) {
-    const memories = extractMemoriesFromText(text);
-    const userId =
-      hookCtx?.user?.id ?? hookCtx?.author?.id ?? hookCtx?.message?.userId;
-    for (const m of memories) {
-      try {
-        const id = crypto.randomUUID();
-        const now = Date.now();
+    const mode = config.captureMode ?? "hybrid";
 
-        // Write to Qdrant (if vector search is configured)
-        if (qdrant && embed) {
-          const vector = await embed(m.text);
-          await qdrant.upsert([
-            {
-              id,
-              vector,
-              payload: {
-                text: m.text,
-                memory_type: m.memoryType,
-                source,
-                session_id: hookCtx?.session?.id,
-                agent_id: hookCtx?.session?.agentId,
-                user_id: userId,
-                created_at: now,
-              },
-            },
-          ]);
-        }
+    // Save full transcript
+    if (mode === "full" || mode === "hybrid") {
+      await saveMemory(text, "transcript", source, hookCtx);
+    }
 
-        // Write to SQLite
-        await sqlite.insertMemory({
-          id,
-          text: m.text,
-          memory_type: m.memoryType,
-          session_id: hookCtx?.session?.id,
-          agent_id: hookCtx?.session?.agentId,
-          user_id: userId,
-          source,
-        });
-      } catch (err: any) {
-        api.logger.error("memory-alpha: auto-capture failed", {
-          source,
-          error: err.message,
-        });
+    // Save filtered key moments
+    if (mode === "filtered" || mode === "hybrid") {
+      const memories = extractMemoriesFromText(text);
+      for (const m of memories) {
+        await saveMemory(m.text, m.memoryType, source, hookCtx);
       }
     }
   }

@@ -3,6 +3,7 @@ import prompts from "prompts";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, resolve } from "path";
 import { homedir } from "os";
+import { checkDocker, getDockerInstallInstructions, deployDockerStack } from "./setup-docker.js";
 
 const CONFIG_DIR = resolve(homedir(), ".openclaw/plugins/memory-alpha");
 const CONFIG_PATH = resolve(CONFIG_DIR, "config.json");
@@ -94,7 +95,9 @@ async function main(): Promise<void> {
   let embedModel: string | undefined;
   let embedDimensions: number | undefined;
 
-  if (enableVector) {
+  let vectorEnabled = enableVector;
+
+  async function askRemoteUrls(): Promise<void> {
     const vectorAnswers = await prompts([
       {
         type: "text",
@@ -149,6 +152,88 @@ async function main(): Promise<void> {
     embedDimensions = vectorAnswers.embedDimensions;
   }
 
+  if (vectorEnabled) {
+    let hasDocker = checkDocker();
+
+    if (!hasDocker) {
+      const installDocker = await prompts({
+        type: "confirm",
+        name: "value",
+        message: "Docker is required for local vector search. Would you like to install Docker?",
+        initial: false,
+      }, { onCancel });
+
+      if (installDocker.value) {
+        console.log("\n" + getDockerInstallInstructions());
+        await prompts({
+          type: "confirm",
+          name: "value",
+          message: "Press enter when Docker is installed...",
+          initial: true,
+        }, { onCancel });
+
+        // Re-check
+        if (!checkDocker()) {
+          const useRemote = await prompts({
+            type: "confirm",
+            name: "value",
+            message: "Docker still not found. Do you have Qdrant + Ollama on a remote server?",
+            initial: false,
+          }, { onCancel });
+
+          if (!useRemote.value) {
+            console.log("Vector search disabled. Using SQLite-only mode.");
+            vectorEnabled = false;
+          } else {
+            await askRemoteUrls();
+          }
+        } else {
+          hasDocker = true;
+        }
+      } else {
+        const useRemote = await prompts({
+          type: "confirm",
+          name: "value",
+          message: "Do you have Qdrant + Ollama on a remote server?",
+          initial: false,
+        }, { onCancel });
+
+        if (!useRemote.value) {
+          console.log("Vector search disabled. Using SQLite-only mode.");
+          vectorEnabled = false;
+        } else {
+          await askRemoteUrls();
+        }
+      }
+    }
+
+    if (hasDocker && vectorEnabled) {
+      const deployLocal = await prompts({
+        type: "confirm",
+        name: "value",
+        message: "Deploy Qdrant + Ollama locally with Docker?",
+        initial: true,
+      }, { onCancel });
+
+      if (deployLocal.value) {
+        const success = await deployDockerStack();
+        if (success) {
+          qdrantUrl = "http://localhost:6333";
+          ollamaUrl = "http://localhost:11434";
+          qdrantCollection = existing?.qdrantCollection ?? "memory_alpha";
+          embedModel = existing?.embedModel ?? "snowflake-arctic-embed2";
+          embedDimensions = existing?.embedDimensions ?? 1024;
+          console.log("\n✓ Infrastructure deployed!");
+        } else {
+          console.log("Deployment failed. Please enter remote server URLs:");
+          await askRemoteUrls();
+        }
+      } else {
+        await askRemoteUrls();
+      }
+    }
+  }
+
   // --- Behavior ---
   const behavior = await prompts([
     {
@@ -190,7 +275,7 @@ async function main(): Promise<void> {
     recallLimit: behavior.recallLimit,
   };
 
-  if (enableVector) {
+  if (vectorEnabled) {
     config.qdrantUrl = qdrantUrl;
     config.qdrantCollection = qdrantCollection;
     config.ollamaUrl = ollamaUrl;
