@@ -8,7 +8,11 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsc -w -p tsconfig.json",
-    "setup": "node dist/setup.js"
+    "setup": "node dist/setup.js",
+    "docker:start": "docker compose up -d",
+    "docker:stop": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "docker:pull-model": "docker exec memory-alpha-ollama ollama pull snowflake-arctic-embed2"
   },
   "dependencies": {
     "@sinclair/typebox": "^0.34.49",
