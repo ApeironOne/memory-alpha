@@ -45,42 +45,49 @@ function buildMemorySaveTool(
       _toolCallId: string,
       args: Static<typeof MemorySaveParams>
     ): Promise<AgentToolResult> {
-      const id = crypto.randomUUID();
-      const vector = await embed(args.text);
-      const now = Date.now();
+      try {
+        const id = crypto.randomUUID();
+        const vector = await embed(args.text);
+        const now = Date.now();
 
-      // Write to Qdrant
-      await qdrant.upsert([
-        {
-          id,
-          vector,
-          payload: {
-            text: args.text,
-            tags: args.tags ?? [],
-            memory_type: args.memory_type ?? "fact",
-            agent_id: args.agent_id,
-            session_id: args.session_id,
-            source: "tool",
-            created_at: now,
+        // Write to Qdrant
+        await qdrant.upsert([
+          {
+            id,
+            vector,
+            payload: {
+              text: args.text,
+              tags: args.tags ?? [],
+              memory_type: args.memory_type ?? "fact",
+              agent_id: args.agent_id,
+              session_id: args.session_id,
+              source: "tool",
+              created_at: now,
+            },
           },
-        },
-      ]);
+        ]);
 
-      // Write to SQLite
-      await sqlite.insertMemory({
-        id,
-        text: args.text,
-        memory_type: args.memory_type ?? "fact",
-        session_id: args.session_id,
-        agent_id: args.agent_id,
-        source: "tool",
-        tags: args.tags,
-      });
+        // Write to SQLite
+        await sqlite.insertMemory({
+          id,
+          text: args.text,
+          memory_type: args.memory_type ?? "fact",
+          session_id: args.session_id,
+          agent_id: args.agent_id,
+          source: "tool",
+          tags: args.tags,
+        });
 
-      return {
-        content: [{ type: "text", text: `Memory saved with id ${id}` }],
-        details: { ok: true, id },
-      };
+        return {
+          content: [{ type: "text", text: `Memory saved with id ${id}` }],
+          details: { ok: true, id },
+        };
+      } catch (err: any) {
+        return {
+          content: [{ type: "text", text: `Failed to save memory: ${err.message}` }],
+          details: { ok: false, error: err.message },
+        };
+      }
     },
   };
 }
@@ -100,48 +107,55 @@ function buildMemorySearchTool(
       _toolCallId: string,
       args: Static<typeof MemorySearchParams>
     ): Promise<AgentToolResult> {
-      const limit = args.limit ?? config.recallLimit;
-      const vector = await embed(args.query);
-      const vectorResults = await qdrant.search(vector, limit);
-
-      // FTS fallback / supplement
-      let ftsResults: any[] = [];
       try {
-        ftsResults = await sqlite.searchFts(args.query, limit);
-      } catch {
-        // FTS query may fail on special chars — degrade gracefully
+        const limit = args.limit ?? config.recallLimit;
+        const vector = await embed(args.query);
+        const vectorResults = await qdrant.search(vector, limit);
+
+        // FTS fallback / supplement
+        let ftsResults: any[] = [];
+        try {
+          ftsResults = await sqlite.searchFts(args.query, limit);
+        } catch {
+          // FTS query may fail on special chars — degrade gracefully
+        }
+
+        // Merge: vector results first, then FTS results not already present
+        const seenTexts = new Set(
+          vectorResults.map((r: any) => r.payload?.text)
+        );
+        const supplemental = ftsResults
+          .filter((r) => !seenTexts.has(r.text))
+          .map((r) => ({
+            payload: { text: r.text, memory_type: r.memory_type },
+            score: 0,
+            source: "fts",
+          }));
+
+        const merged = [...vectorResults, ...supplemental].slice(0, limit);
+
+        // Track recall counts for FTS hits
+        for (const r of ftsResults) {
+          await sqlite.incrementRecallCount(r.id);
+        }
+
+        const text = merged
+          .map(
+            (r: any, i: number) =>
+              `${i + 1}. [${r.payload?.memory_type ?? "unknown"}] ${r.payload?.text ?? ""}`
+          )
+          .join("\n");
+
+        return {
+          content: [{ type: "text", text: text || "No results found." }],
+          details: { results: merged },
+        };
+      } catch (err: any) {
+        return {
+          content: [{ type: "text", text: `Memory search failed: ${err.message}` }],
+          details: { error: err.message },
+        };
       }
-
-      // Merge: vector results first, then FTS results not already present
-      const seenTexts = new Set(
-        vectorResults.map((r: any) => r.payload?.text)
-      );
-      const supplemental = ftsResults
-        .filter((r) => !seenTexts.has(r.text))
-        .map((r) => ({
-          payload: { text: r.text, memory_type: r.memory_type },
-          score: 0,
-          source: "fts",
-        }));
-
-      const merged = [...vectorResults, ...supplemental].slice(0, limit);
-
-      // Track recall counts for FTS hits
-      for (const r of ftsResults) {
-        await sqlite.incrementRecallCount(r.id);
-      }
-
-      const text = merged
-        .map(
-          (r: any, i: number) =>
-            `${i + 1}. [${r.payload?.memory_type ?? "unknown"}] ${r.payload?.text ?? ""}`
-        )
-        .join("\n");
-
-      return {
-        content: [{ type: "text", text: text || "No results found." }],
-        details: { results: merged },
-      };
     },
   };
 }
@@ -161,25 +175,32 @@ function buildMemoryRecallTool(
       _toolCallId: string,
       args: Static<typeof MemoryRecallParams>
     ): Promise<AgentToolResult> {
-      const limit = args.limit ?? config.recallLimit;
-      const vector = await embed(args.query);
-      const results = await qdrant.search(vector, limit);
+      try {
+        const limit = args.limit ?? config.recallLimit;
+        const vector = await embed(args.query);
+        const results = await qdrant.search(vector, limit);
 
-      // Track used_count for recalled memories
-      for (const r of results) {
-        if (r.id) {
-          await sqlite.incrementUsedCount(r.id as string);
+        // Track used_count for recalled memories
+        for (const r of results) {
+          if (r.id) {
+            await sqlite.incrementUsedCount(r.id as string);
+          }
         }
+
+        const text = results
+          .map((r: any, i: number) => `${i + 1}. ${r.payload?.text ?? ""}`)
+          .join("\n");
+
+        return {
+          content: [{ type: "text", text: text || "No memories recalled." }],
+          details: { injected: results, count: results.length },
+        };
+      } catch (err: any) {
+        return {
+          content: [{ type: "text", text: `Memory recall failed: ${err.message}` }],
+          details: { error: err.message },
+        };
       }
-
-      const text = results
-        .map((r: any, i: number) => `${i + 1}. ${r.payload?.text ?? ""}`)
-        .join("\n");
-
-      return {
-        content: [{ type: "text", text: text || "No memories recalled." }],
-        details: { injected: results, count: results.length },
-      };
     },
   };
 }
@@ -189,22 +210,123 @@ function buildMemoryRecallTool(
 export function registerMemoryTools(
   api: OpenClawPluginApi,
   config: MemoryAlphaConfig,
-  sqlite: SqliteStore
+  sqlite: SqliteStore,
+  mode: "sqlite-only" | "hybrid" | "full"
 ) {
-  const qdrant = new QdrantClient(config.qdrantUrl, config.qdrantCollection);
-  const embed = (text: string) =>
-    embedText(
-      text,
-      config.embedDimensions,
-      config.ollamaUrl,
-      config.embedModel
-    );
+  if (mode === "sqlite-only") {
+    // SQLite-only mode: no vector search, FTS only
+    api.logger.warn("memory-alpha: vector search disabled (SQLite-only mode)");
+    
+    // Register SQLite-only tools (simplified versions without embeddings)
+    api.registerTool(buildSqliteOnlySearchTool(sqlite, config));
+    api.registerTool(buildSqliteOnlySaveTool(sqlite));
+    
+    api.logger.info("memory-alpha: tools registered (SQLite-only)", {
+      tools: ["memory_save", "memory_search"],
+      vectorSearch: false
+    });
+  } else {
+    // Full or hybrid mode: vector search enabled
+    if (!config.qdrantUrl || !config.ollamaUrl) {
+      throw new Error("Qdrant and Ollama URLs required for vector search mode");
+    }
+    
+    const qdrant = new QdrantClient(config.qdrantUrl, config.qdrantCollection!);
+    const embed = (text: string) =>
+      embedText(
+        text,
+        config.embedDimensions!,
+        config.ollamaUrl!,
+        config.embedModel!
+      );
 
-  api.registerTool(buildMemorySaveTool(qdrant, embed, sqlite));
-  api.registerTool(buildMemorySearchTool(qdrant, embed, sqlite, config));
-  api.registerTool(buildMemoryRecallTool(qdrant, embed, sqlite, config));
+    api.registerTool(buildMemorySaveTool(qdrant, embed, sqlite));
+    api.registerTool(buildMemorySearchTool(qdrant, embed, sqlite, config));
+    api.registerTool(buildMemoryRecallTool(qdrant, embed, sqlite, config));
 
-  api.logger.info("memory-alpha: tools registered", {
-    sharedPool: config.sharedPool,
-  });
+    api.logger.info("memory-alpha: tools registered (vector search enabled)", {
+      sharedPool: config.sharedPool,
+      mode,
+      tools: ["memory_save", "memory_search", "memory_recall"]
+    });
+  }
+}
+
+// ---- SQLite-only tool builders ----
+
+function buildSqliteOnlySaveTool(
+  sqlite: SqliteStore
+): AgentTool<typeof MemorySaveParams> {
+  return {
+    name: "memory_save",
+    description: "Store a memory (keyword search only, no vector embeddings)",
+    label: "Save Memory",
+    parameters: MemorySaveParams,
+    async execute(
+      _toolCallId: string,
+      args: Static<typeof MemorySaveParams>
+    ): Promise<AgentToolResult> {
+      const id = crypto.randomUUID();
+      
+      await sqlite.insertMemory({
+        id,
+        text: args.text,
+        memory_type: args.memory_type ?? "fact",
+        session_id: args.session_id,
+        agent_id: args.agent_id,
+        source: "tool",
+        tags: args.tags,
+      });
+
+      return {
+        content: [{ type: "text", text: `Memory saved with id ${id} (SQLite-only, no vector search)` }],
+        details: { ok: true, id, mode: "sqlite-only" },
+      };
+    },
+  };
+}
+
+function buildSqliteOnlySearchTool(
+  sqlite: SqliteStore,
+  config: MemoryAlphaConfig
+): AgentTool<typeof MemorySearchParams> {
+  return {
+    name: "memory_search",
+    description: "Search memories using keyword matching (FTS5)",
+    label: "Search Memories",
+    parameters: MemorySearchParams,
+    async execute(
+      _toolCallId: string,
+      args: Static<typeof MemorySearchParams>
+    ): Promise<AgentToolResult> {
+      const limit = args.limit ?? config.recallLimit;
+      
+      let results: any[] = [];
+      try {
+        results = await sqlite.searchFts(args.query, limit);
+      } catch (err: any) {
+        return {
+          content: [{ type: "text", text: `Search failed: ${err.message}` }],
+          details: { error: err.message },
+        };
+      }
+
+      // Track recall counts
+      for (const r of results) {
+        await sqlite.incrementRecallCount(r.id);
+      }
+
+      const text = results
+        .map(
+          (r: any, i: number) =>
+            `${i + 1}. [${r.memory_type ?? "unknown"}] ${r.text ?? ""}`
+        )
+        .join("\n");
+
+      return {
+        content: [{ type: "text", text: text || "No results found." }],
+        details: { results, mode: "sqlite-only" },
+      };
+    },
+  };
 }
